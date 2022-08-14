@@ -54,6 +54,7 @@ I'll keep an SQLite database as cache of informations from Google Drive to avoid
 config_path: [fullpath of config location]
 db: $CONFIG_PATH/[filename to your DB].db
 # ...
+```
 
 ##Roadmap
  * [x] Load watchers.yml from file
