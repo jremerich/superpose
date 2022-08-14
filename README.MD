@@ -56,7 +56,7 @@ db: $CONFIG_PATH/[filename to your DB].db
 # ...
 ```
 
-##Roadmap
+## Roadmap
  * [x] Load watchers.yml from file
  * [x] Parse paths like '~/'
  * [x] Ignore files and dirs
