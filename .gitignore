@@ -1,0 +1,4 @@
+watchers.yml
+*.db
+__debug_bin
+.idea
