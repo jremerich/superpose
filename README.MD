@@ -51,9 +51,34 @@ I'll keep an SQLite database as cache of informations from Google Drive to avoid
 
 ```yaml
 # ...
-config_path: [fullpath of config location]
+config_path: [fullpath to your config location]
 db: $CONFIG_PATH/[filename to your DB].db
 # ...
+```
+
+### Complete `watchers.yml`
+```yaml
+google_drive:
+    root_folder_id: [ID of your folder on Google Drive where files will be saved]
+    client_id: [your client google client ID]
+    client_secret: [your client google client secret]
+    token:
+        access_token: [google oauth2 access token]
+        token_type: Bearer
+        refresh_token: [google oauth2 refresh token]
+        expiry: [google oauth2 expiry]
+        expires_in: [seconds from now until expiry data]
+        scope: https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.activity # minimal needed scopes
+mask: IN_CREATE | IN_ATTRIB | IN_CLOSE_WRITE | IN_MOVE | IN_DELETE | IN_DELETE_SELF # DO NOT CHANGE THIS!! I'll remove this config
+config_path: [fullpath to your config location]
+db: $CONFIG_PATH/[filename to your DB].db
+watchers:
+    - dir: /home/[your-user]/some-dir/
+    - dir: ~/.ssh # you can do like this, too!
+    - dir: ~/another-dir
+      recursive: false # you avoid to watch a dir recursively if you wanna sync only first level.
+ignore: # you can avoid syncing some dirs, too.
+  - dir: ~/.kube/cache/
 ```
 
 ## Roadmap
