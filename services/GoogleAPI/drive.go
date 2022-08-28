@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,10 @@ import (
 
 	drive "google.golang.org/api/drive/v3"
 )
+
+type DrivePrepared struct {
+	fileCreateCall *drive.FilesCreateCall
+}
 
 type GoogleDrive struct {
 	service drive.Service
@@ -40,7 +45,7 @@ func init() {
 	ChannelDriveEvents = make(chan DriveEvent)
 }
 
-func NewService() GoogleDrive {
+func NewGoogleDriveService() GoogleDrive {
 	service, err := drive.NewService(getContext(), option.WithHTTPClient(getOAuthClient()))
 	if err != nil {
 		log.Fatalf("Unable to create Drive service: %v", err)
@@ -104,10 +109,6 @@ func (googleDrive *GoogleDrive) Send(filename string) error {
 	return nil
 }
 
-type DrivePrepared struct {
-	fileCreateCall *drive.FilesCreateCall
-}
-
 func (p DrivePrepared) Do(opts ...googleapi.CallOption) (*drive.File, error) {
 	file, err := Do(p.fileCreateCall.Fields(filesFields).Do(opts...))
 	return file, err
@@ -152,7 +153,7 @@ func (googleDrive *GoogleDrive) CreateTree(fullPath string, info os.FileInfo) st
 	if info == nil {
 		_info, err := os.Stat(fullPath)
 		if err != nil {
-			log.Fatalln(os.Stderr, err)
+			log.Fatalln(err)
 		}
 		info = _info
 	}
@@ -180,7 +181,7 @@ func (googleDrive *GoogleDrive) CreateTree(fullPath string, info os.FileInfo) st
 			if errors.Is(err, ErrNotFound) {
 				folder, errCreate := googleDrive.CreateFile(dir, parentId, strActualPathTree).Do()
 				if errCreate != nil {
-					log.Fatalln(os.Stderr, errCreate)
+					log.Fatalln(errCreate)
 				}
 				_parentId = folder.Id
 			}
@@ -252,14 +253,35 @@ func (googleDrive *GoogleDrive) ListAll() (*drive.FileList, error) {
 	return googleDrive.GetList("")
 }
 
+func (googleDrive *GoogleDrive) GetFile(fileId string) (*drive.File, error) {
+	file, err := googleDrive.service.Files.Get(fileId).Fields(filesFields).Do()
+
+	if err != nil {
+		log.Printf("Got Files.List error: %#v, %v", file, err)
+		return nil, err
+	}
+	return file, nil
+}
+
+func (googleDrive *GoogleDrive) DownloadFile(fileId string) (*http.Response, error) {
+	file, err := googleDrive.service.Files.Get(fileId).Download()
+
+	if err != nil {
+		log.Printf("Got Files.List error: %#v, %v", file, err)
+		return nil, err
+	}
+	defer file.Body.Close()
+	return file, nil
+}
+
 func (googleDrive *GoogleDrive) GetList(query string) (*drive.FileList, error) {
-	q := "trashed = false"
+	filesListCall := googleDrive.service.Files.List()
 	if query != "" {
-		q += " and " + query
+		filesListCall = filesListCall.Q(query)
 	}
 
 	var fields = "files(" + filesFields + ")"
-	fileList, err := googleDrive.service.Files.List().Q(q).Fields(fields).Do()
+	fileList, err := filesListCall.Fields(fields).Do()
 	if err != nil {
 		log.Printf("Got Files.List error: %#v, %v", fileList, err)
 		return nil, err
@@ -299,3 +321,51 @@ func (googleDrive *GoogleDrive) GetIdByPath(fullPath string, parentId string) (s
 func sendEventMessage(event DriveEvent) {
 	ChannelDriveEvents <- event
 }
+
+var Changes []*drive.Change
+
+// func (googleDrive *GoogleDrive) StartRemoteWatch(callback func(event DriveEvent)) {
+// func (googleDrive *GoogleDrive) StartRemoteWatch() {
+// 	pageToken := "1657316" // googleDrive.getPageToken()
+// 	googleDrive.nextChangesPage(pageToken)
+
+// 	for _, change := range Changes {
+// 		file := change.File
+// 		jsonContent, _ := json.Marshal(file)
+// 		log.Printf("File: %v", string(jsonContent))
+// 	}
+// }
+
+// nextPageToken,newStartPageToken,changes(removed, file(id, name, mimeType, parents, createdTime, modifiedTime, appProperties, properties))
+// nextPageToken,newStartPageToken,changes(fileId,file(name,parents,mimeType))
+
+// func (googleDrive *GoogleDrive) getPageToken() string {
+// 	if ConfigFile.Configs.GoogleDrive.StartPageToken != "" {
+// 		log.Println("Saved startPageToken: ", ConfigFile.Configs.GoogleDrive.StartPageToken)
+// 		return ConfigFile.Configs.GoogleDrive.StartPageToken
+// 	}
+// 	startPageToken, err := googleDrive.service.Changes.GetStartPageToken().Do()
+// 	if err != nil {
+// 		log.Println("GetStartPageToken error: ", err)
+// 	}
+// 	log.Println("startPageToken: ", startPageToken.StartPageToken)
+// 	return startPageToken.StartPageToken
+// }
+
+// func (googleDrive *GoogleDrive) nextChangesPage(pageToken string) {
+// 	var fields = "nextPageToken,newStartPageToken,changes(removed, file(" + filesFields + "))"
+// 	list, err := googleDrive.service.Changes.List(pageToken).Fields(fields).Do()
+// 	if err != nil {
+// 		log.Println("List error: ", err)
+// 	}
+
+// 	Changes = append(Changes, list.Changes...)
+
+// 	if list.NextPageToken != "" {
+// 		googleDrive.nextChangesPage(list.NextPageToken)
+// 	} else {
+// 		log.Println("NewStartPageToken: ", list.NewStartPageToken)
+// 		ConfigFile.Configs.GoogleDrive.StartPageToken = list.NewStartPageToken
+// 		ConfigFile.SaveFile()
+// 	}
+// }

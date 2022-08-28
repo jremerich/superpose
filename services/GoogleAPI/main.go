@@ -28,8 +28,7 @@ var (
 	secret     = flag.String("secret", "", "OAuth 2.0 Client Secret.  If non-empty, overrides --secret_file")
 	secretFile = flag.String("secret-file", "clientsecret.dat",
 		"Name of a file containing just the project's OAuth 2.0 Client Secret from https://developers.google.com/console.")
-	cacheToken = flag.Bool("cachetoken", true, "cache the OAuth 2.0 token")
-	debug      = flag.Bool("debug", false, "show HTTP traffic")
+	debug = flag.Bool("debug", false, "show HTTP traffic")
 )
 
 func getConfig() *oauth2.Config {
@@ -49,7 +48,7 @@ func getContext() context.Context {
 	ctx := context.Background()
 	if *debug {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
-			Transport: &utils.LogTransport{http.DefaultTransport},
+			Transport: &utils.LogTransport{RT: http.DefaultTransport},
 		})
 	}
 	return ctx
@@ -64,7 +63,7 @@ func newOAuthClient(ctx context.Context, config *oauth2.Config) *http.Client {
 			TokenType:    token.TokenType,
 			RefreshToken: token.RefreshToken,
 			Expiry:       token.Expiry,
-			ExpiresIn:    int(token.Expiry.Sub(time.Now()).Seconds()),
+			ExpiresIn:    int(time.Until(token.Expiry).Seconds()),
 			Scope:        strings.Join(config.Scopes, " "),
 		}
 		ConfigFile.SaveFile()
@@ -80,7 +79,7 @@ func getTokenConverted(config *oauth2.Config) *oauth2.Token {
 		RefreshToken: ConfigFile.Configs.GoogleDrive.Token.RefreshToken,
 		Expiry:       ConfigFile.Configs.GoogleDrive.Token.Expiry,
 	}
-	tokenSource := config.TokenSource(oauth2.NoContext, token)
+	tokenSource := config.TokenSource(context.Background(), token)
 	savedToken, err := tokenSource.Token()
 	if err != nil {
 		savedToken = token
@@ -163,5 +162,9 @@ func valueOrFileContents(value string, filename string) string {
 }
 
 func NewDrive() GoogleDrive {
-	return NewService()
+	return NewGoogleDriveService()
+}
+
+func NewActivity(Drive GoogleDrive) GoogleDriveActivity {
+	return NewGoogleDriveActivityService(Drive)
 }
