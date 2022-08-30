@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	. "superpose-sync/adapters"
@@ -11,6 +10,7 @@ import (
 	"superpose-sync/adapters/sqlite"
 	"superpose-sync/repositories"
 	"superpose-sync/services/GoogleAPI"
+	"superpose-sync/services/SaveGoogleInfo"
 
 	"github.com/urfave/cli/v2" // https://cli.urfave.org/v2/
 )
@@ -47,10 +47,9 @@ func start() {
 	sqlite.Connect()
 
 	Drive = GoogleAPI.NewDrive()
-	// Drive.StartRemoteWatch()
 	Activity = GoogleAPI.NewActivity(Drive)
-	Activity.StartRemoteWatch(receiveRemoteEvents)
-	// SaveGoogleInfo.StartListener()
+
+	Activity.ReceiveRemoteEvents("1ydbCRFUpgeoOi0ELU_vhZutROxwcdwMI", "edit")
 
 	// startWatchers()
 }
@@ -68,7 +67,8 @@ func startWatchers() {
 	}
 
 	watcher.InotifyWatcher.StartWatch(receiveEvents)
-	// Drive.StartRemoteWatch(receiveRemoteEvents)
+	SaveGoogleInfo.StartListener()
+	Activity.StartRemoteWatch()
 }
 
 type EventPath struct {
@@ -86,40 +86,6 @@ var (
 
 func (eventPath EventPath) Is(needle uint32) bool {
 	return eventPath.Mask&needle == needle
-}
-
-func receiveRemoteEvents(driveItemID, action string) {
-	driveFile, err := Drive.GetFile(driveItemID)
-	if err != nil {
-		log.Printf("Got Files.List error: %#v, %v", driveFile, err)
-	} else {
-		fileName := "/home/zero/teste-mirror-minio/" + driveFile.Name
-		if action == "Delete" {
-			// remove do diretorio local
-			log.Printf("\nDelete File: %v", driveFile)
-			err := os.Remove(fileName)
-			if err != nil {
-				log.Printf("Got os.Remove error: %#v, %v", fileName, err)
-			}
-		} else {
-			out, err := os.Create(fileName)
-			if err != nil {
-				log.Printf("Got os.Create error: %#v, %v", driveFile, err)
-			}
-			defer out.Close()
-
-			driveFile, err := Drive.DownloadFile(driveItemID)
-			if err != nil {
-				log.Printf("Got Drive.DownloadFile error: %#v, %v", driveFile, err)
-			} else {
-				log.Printf("\nDownload File: %v", driveFile)
-				_, err := io.Copy(out, driveFile.Body)
-				if err != nil {
-					log.Printf("Got io.Copy error: %v", err)
-				}
-			}
-		}
-	}
 }
 
 func receiveEvents(event inotify.FileEvent) {

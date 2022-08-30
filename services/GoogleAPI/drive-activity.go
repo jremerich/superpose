@@ -2,10 +2,14 @@ package GoogleAPI
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"superpose-sync/adapters/ConfigFile"
+	"time"
 
 	"google.golang.org/api/driveactivity/v2"
 	"google.golang.org/api/option"
@@ -43,13 +47,28 @@ func NewGoogleDriveActivityService(Drive GoogleDrive) GoogleDriveActivity {
 	return googleDriveActivity
 }
 
-func (googleDriveActivity *GoogleDriveActivity) StartRemoteWatch(callback func(driveItemID, action string)) {
-	// func (googleDriveActivity *GoogleDriveActivity) StartRemoteWatch() {
-	q := driveactivity.QueryDriveActivityRequest{
-		// PageSize:     10,
-		AncestorName: fmt.Sprintf("items/%s", ConfigFile.Configs.GoogleDrive.RootFolderId),
-		Filter:       fmt.Sprintf("time >= \"%s\"", "2022-08-17T04:00:53.375Z"),
+var receivedEventsIds map[string]string = map[string]string{}
+
+func (googleDriveActivity *GoogleDriveActivity) StartRemoteWatch() {
+	wait := make(chan struct{})
+	for {
+		go googleDriveActivity.callQueryActivities(wait)
+		<-wait
 	}
+}
+
+func (googleDriveActivity *GoogleDriveActivity) callQueryActivities(ch chan struct{}) {
+	for k := range receivedEventsIds {
+		delete(receivedEventsIds, k)
+	}
+
+	q := driveactivity.QueryDriveActivityRequest{
+		AncestorName: fmt.Sprintf("items/%s", ConfigFile.Configs.GoogleDrive.RootFolderId),
+		Filter:       fmt.Sprintf("time >= \"%s\"", ConfigFile.Configs.GoogleDrive.LastActivityCheck),
+	}
+	ConfigFile.Configs.GoogleDrive.LastActivityCheck = time.Now().UTC().Format(time.RFC3339)
+	ConfigFile.SaveFile()
+
 	r, err := googleDriveActivity.service.Activity.Query(&q).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve list of activities. %v", err)
@@ -68,7 +87,6 @@ func (googleDriveActivity *GoogleDriveActivity) StartRemoteWatch(callback func(d
 							MimeType: driveFile.MimeType,
 						}
 					} else if a.Targets[i].DriveItem.DriveFolder != nil {
-						// driveItem = a.Targets[i].DriveItem.DriveFolder
 						driveFolder := a.Targets[i].DriveItem
 						driveItem = driveItemAux{
 							Name:     driveFolder.Name,
@@ -78,12 +96,69 @@ func (googleDriveActivity *GoogleDriveActivity) StartRemoteWatch(callback func(d
 					}
 					driveItemID := driveItem.getId()
 					action := getOneOf(*a.Actions[i].Detail)
-					callback(driveItemID, action)
+
+					_, ok := receivedEventsIds[driveItemID]
+					if !ok {
+						receivedEventsIds[driveItemID] = action
+						googleDriveActivity.ReceiveRemoteEvents(driveItemID, action)
+					}
 				}
 			}
 		}
+	}
+
+	time.Sleep(5 * time.Second)
+	ch <- struct{}{}
+}
+
+func (googleDriveActivity *GoogleDriveActivity) ReceiveRemoteEvents(driveItemID, action string) {
+	driveFile, err := googleDriveActivity.driveService.GetFile(driveItemID)
+	if err != nil {
+		log.Printf("Got Files.List error: %#v, %v", driveFile, err)
 	} else {
-		fmt.Print("No activity.")
+		fileName := driveFile.AppProperties["fullPath"]
+		fileMode := driveFile.AppProperties["mode"]
+		if action == "Delete" {
+			deleteLocalFile(fileName)
+		} else {
+			googleDriveActivity.downloadToLocal(driveItemID, fileName, fileMode)
+		}
+	}
+}
+
+func (googleDriveActivity *GoogleDriveActivity) downloadToLocal(driveItemID, fileName, fileMode string) {
+	driveFile, err := googleDriveActivity.driveService.DownloadFile(driveItemID)
+	if err != nil {
+		log.Printf("Got Drive.DownloadFile error: %#v, %v", driveFile, err)
+	} else {
+		defer driveFile.Body.Close()
+		out, err := os.Create(fileName)
+		if err != nil {
+			log.Printf("Got os.Create error: %#v, %v", driveFile, err)
+		}
+		defer out.Close()
+
+		fmt.Printf("\nDownload File: %v\n", fileName)
+		_, err = io.Copy(out, driveFile.Body)
+		if err != nil {
+			log.Printf("Got io.Copy error: %v", err)
+		}
+
+		if mode, err := strconv.ParseUint(fileMode, 0, 32); err == nil {
+			fmt.Printf("%T, %v (%v)\n", mode, mode, fileMode)
+			if err := os.Chmod(fileName, os.FileMode(mode)); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+}
+
+func deleteLocalFile(fileName string) {
+	// remove do diretorio local
+	log.Printf("\nDelete File: %v", fileName)
+	err := os.Remove(fileName)
+	if err != nil {
+		log.Printf("Got os.Remove error: %#v, %v", fileName, err)
 	}
 }
 
@@ -112,10 +187,6 @@ func getTargetsInfo(targets []*driveactivity.Target) []string {
 		targetsInfo[i] = getTargetInfo(targets[i])
 	}
 	return targetsInfo
-}
-
-func ReceiveRemoteEvents(event DriveEvent) {
-
 }
 
 // Returns a string representation of the first elements in a list.

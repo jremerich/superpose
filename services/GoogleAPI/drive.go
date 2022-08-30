@@ -270,7 +270,6 @@ func (googleDrive *GoogleDrive) DownloadFile(fileId string) (*http.Response, err
 		log.Printf("Got Files.List error: %#v, %v", file, err)
 		return nil, err
 	}
-	defer file.Body.Close()
 	return file, nil
 }
 

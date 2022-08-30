@@ -18,11 +18,12 @@ type WatchPath struct {
 }
 
 type GoogleDrive struct {
-	RootFolderId   string `yaml:"root_folder_id"`
-	StartPageToken string `yaml:"start_page_token"`
-	ClientId       string `yaml:"client_id"`
-	ClientSecret   string `yaml:"client_secret"`
-	Token          Token  `yaml:"token"`
+	RootFolderId      string `yaml:"root_folder_id"`
+	StartPageToken    string `yaml:"start_page_token"`
+	ClientId          string `yaml:"client_id"`
+	ClientSecret      string `yaml:"client_secret"`
+	LastActivityCheck string `yaml:"last_activity_check"`
+	Token             Token  `yaml:"token"`
 }
 
 type Token struct {
