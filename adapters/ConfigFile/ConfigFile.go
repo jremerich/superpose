@@ -127,3 +127,8 @@ func PathInIgnore(pathToCheck string) (bool, error) {
 	}
 	return false, nil
 }
+
+func SetLastActivityCheck() {
+	Configs.GoogleDrive.LastActivityCheck = time.Now().UTC().Format(time.RFC3339)
+	SaveFile()
+}

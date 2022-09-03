@@ -13,6 +13,8 @@ import (
 	"superpose-sync/adapters/ConfigFile"
 	"superpose-sync/repositories"
 	"superpose-sync/utils"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/api/googleapi"
@@ -38,6 +40,9 @@ var (
 	ErrNotFound        = errors.New("drive: path doesn't exists")
 	ChannelDriveEvents chan DriveEvent
 	filesFields        googleapi.Field = "id, name, mimeType, parents, createdTime, modifiedTime, appProperties, properties"
+	googleDrive        GoogleDrive
+	atomicGoogleDrive  uint64
+	mutexGoogleDrive   = &sync.Mutex{}
 )
 
 func init() {
@@ -46,13 +51,24 @@ func init() {
 }
 
 func NewGoogleDriveService() GoogleDrive {
-	service, err := drive.NewService(getContext(), option.WithHTTPClient(getOAuthClient()))
-	if err != nil {
-		log.Fatalf("Unable to create Drive service: %v", err)
+	if atomic.LoadUint64(&atomicGoogleDrive) == 1 {
+		return googleDrive
 	}
 
-	googleDrive := GoogleDrive{
-		service: *service,
+	mutexGoogleDrive.Lock()
+	defer mutexGoogleDrive.Unlock()
+
+	if atomicGoogleDrive == 0 {
+		service, err := drive.NewService(getContext(), option.WithHTTPClient(getOAuthClient()))
+		if err != nil {
+			log.Fatalf("Unable to create Drive service: %v", err)
+		}
+
+		googleDrive = GoogleDrive{
+			service: *service,
+		}
+
+		atomic.StoreUint64(&atomicGoogleDrive, 1)
 	}
 	return googleDrive
 }
@@ -62,14 +78,14 @@ func (googleDrive *GoogleDrive) Remove(id string) error {
 	file := &drive.File{
 		Id: id,
 	}
-	log.Println("drive.File criado")
 	_, err := Do(file, googleDrive.service.Files.Delete(id).Do())
-	// err := googleDrive.service.Files.Delete(id).Do()
 	log.Println("removido: ", err)
 	return err
 }
 
 func (googleDrive *GoogleDrive) Send(filename string) error {
+	log.Printf("Sending %q", filename)
+
 	info, err := os.Stat(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -82,12 +98,11 @@ func (googleDrive *GoogleDrive) Send(filename string) error {
 		return err
 	}
 
-	parentId := googleDrive.CreateTree(filename, info)
-
 	fileId, driveFile, err := googleDrive.FileExists(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
+	fmt.Printf("FileExists: %v\n", fileId)
 	if fileId != "" {
 		driveFile, err = Do(googleDrive.Update(fileId, driveFile).Media(goFile).Fields(filesFields).Do())
 		if err != nil {
@@ -96,6 +111,9 @@ func (googleDrive *GoogleDrive) Send(filename string) error {
 		}
 		return nil
 	}
+
+	parentId := googleDrive.CreateTree(filename, info)
+	fmt.Printf("ParentID: %v\n", parentId)
 
 	log.Printf("\u001B[32m[%s] filename: %s | parentId: %s | FileInfo.Name(): %s | FileInfo.Mode(): %s | FileInfo.Mode().Perm(): %s\u001B[39m\n",
 		utils.GetFunctionName(), filename, parentId, info.Name(), info.Mode(), info.Mode().Perm())
@@ -123,6 +141,7 @@ func Do(file *drive.File, err error) (*drive.File, error) {
 			Action: utils.GetFunctionNameSkip(1),
 		})
 	}
+	ConfigFile.SetLastActivityCheck()
 	return file, err
 }
 
@@ -295,7 +314,7 @@ func (googleDrive *GoogleDrive) GetList(query string) (*drive.FileList, error) {
 
 func (googleDrive *GoogleDrive) GetIdByPath(fullPath string, parentId string) (string, *drive.File, error) {
 	fullPath = utils.GetAbsPathLocal(fullPath)
-	query := "appProperties has { key='fullPath' and value='" + fullPath + "' }"
+	query := "trashed=false and appProperties has { key='fullPath' and value='" + fullPath + "' }"
 	if parentId != "" {
 		query += " and '" + parentId + "' in parents"
 	}

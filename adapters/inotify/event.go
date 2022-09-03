@@ -119,6 +119,10 @@ func (i InotifyEvent) Is(needle uint32) bool {
 	return i.Mask&needle == needle
 }
 
+func (i InotifyEvent) IsSyncEvent() bool {
+	return i.Is(InCloseWrite) || i.Is(InDelete) || i.Is(InDeleteSelf) || i.Is(InMove)
+}
+
 // FileEvent is the wrapper around InotifyEvent with additional Eof marker. Reading from
 // FileEvents from DirWatcher.C or FileWatcher.C may end with Eof when underlying inotify is closed
 type FileEvent struct {

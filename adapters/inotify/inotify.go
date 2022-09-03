@@ -75,6 +75,16 @@ func (i *Inotify) RmWd(wd uint32) error {
 	return nil
 }
 
+func (i *Inotify) GetWatchByPath(pathName string) (uint32, error) {
+	log.Printf("GetWatchByPath: %s", pathName)
+
+	wd, ok := i.watches[pathName]
+	if !ok {
+		return 0, nil
+	}
+	return wd, nil
+}
+
 // RmWatch removes watch by pathName
 func (i *Inotify) RmWatch(pathName string) error {
 	log.Printf("Unwatching: %s", pathName)

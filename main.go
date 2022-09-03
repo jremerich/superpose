@@ -10,6 +10,7 @@ import (
 	"superpose-sync/adapters/sqlite"
 	"superpose-sync/repositories"
 	"superpose-sync/services/GoogleAPI"
+	"superpose-sync/services/LocalFS"
 	"superpose-sync/services/SaveGoogleInfo"
 
 	"github.com/urfave/cli/v2" // https://cli.urfave.org/v2/
@@ -49,9 +50,7 @@ func start() {
 	Drive = GoogleAPI.NewDrive()
 	Activity = GoogleAPI.NewActivity(Drive)
 
-	Activity.ReceiveRemoteEvents("1ydbCRFUpgeoOi0ELU_vhZutROxwcdwMI", "edit")
-
-	// startWatchers()
+	startWatchers()
 }
 
 var (
@@ -66,9 +65,17 @@ func startWatchers() {
 		log.Fatal(err)
 	}
 
-	watcher.InotifyWatcher.StartWatch(receiveEvents)
+	log.Println("Starting LocalFSHandler Listener")
+	LocalFS.StartListener()
+
+	log.Println("Starting Save Google Info Listener")
 	SaveGoogleInfo.StartListener()
-	Activity.StartRemoteWatch()
+
+	log.Println("Starting Remote Watcher")
+	go Activity.StartRemoteWatch()
+
+	log.Println("Starting Inotify Watcher")
+	watcher.InotifyWatcher.StartWatch(receiveEvents)
 }
 
 type EventPath struct {
@@ -106,11 +113,13 @@ func receiveEvents(event inotify.FileEvent) {
 	eventPath.Mask += event.Mask
 	EventPaths[event.Name] = eventPath
 
-	if event.Is(inotify.InCloseWrite) || event.Is(inotify.InDelete) || event.Is(inotify.InDeleteSelf) || event.Is(inotify.InMove) {
+	if event.IsSyncEvent() {
 		delete(EventPaths, eventPath.Name)
 		syncLocalToRemote(eventPath)
 	}
 }
+
+// TODO It's in looping between remote and local change watchers. Try to cancel changed path's inotify watcher
 
 func syncLocalToRemote(eventPath EventPath) {
 	if eventPath.Is(inotify.InDelete) || eventPath.Is(inotify.InMovedFrom) {

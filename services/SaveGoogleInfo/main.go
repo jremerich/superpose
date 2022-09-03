@@ -30,8 +30,8 @@ func StartListener() {
 					FullPath:  event.File.AppProperties["fullPath"],
 				}
 
-				log.Println("event.Action: ", event.Action)
-				log.Println("path: ", path.String())
+				log.Printf("event.Action: %v", event.Action)
+				// log.Println("path: ", path.String())
 
 				if strings.HasSuffix(event.Action, ".Remove") {
 					repositories.Delete(path)
