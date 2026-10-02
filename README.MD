@@ -82,6 +82,8 @@ ignore: # you can avoid syncing some dirs, too.
 ```
 
 ## Roadmap
+
+> A plan for the next steps (new backend, bidirectional sync, mobile, library updates) lives in [`docs/PLANO.md`](docs/PLANO.md) (pt-BR).
  * [x] Load watchers.yml from file
  * [x] Parse paths like '~/'
  * [x] Ignore files and dirs
